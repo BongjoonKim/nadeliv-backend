@@ -43,6 +43,7 @@ jobs:
           SES_SNS_SECRET_TOKEN: ${{ secrets.SES_SNS_SECRET_TOKEN }}
           SES_SNS_TOPIC_ARN: ${{ secrets.SES_SNS_TOPIC_ARN }}
           SES_CONFIGURATION_SET: ${{ secrets.SES_CONFIGURATION_SET }}
+          SES_INBOUND_SECRET_TOKEN: ${{ secrets.SES_INBOUND_SECRET_TOKEN }}
         run: |
           # SSH 키 설정
           echo "$PRIVATE_KEY" > private_key.pem
@@ -179,6 +180,8 @@ jobs:
                 notifications:
                   secret-token: "${SES_SNS_SECRET_TOKEN}"
                   allowed-topic-arn: "${SES_SNS_TOPIC_ARN}"
+                inbound:
+                  secret-token: "${SES_INBOUND_SECRET_TOKEN}"
 
           # 액추에이터 설정 (헬스체크용)
           management:

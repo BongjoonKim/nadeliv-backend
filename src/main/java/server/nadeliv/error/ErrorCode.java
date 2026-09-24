@@ -32,6 +32,7 @@ public enum ErrorCode {
     EMAIL_IP_DISTINCT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "USER_016", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요"),
     ADMIN_CANNOT_MODIFY_SELF(HttpStatus.BAD_REQUEST, "USER_017", "자기 자신의 권한·상태는 변경할 수 없습니다"),
     INVALID_ROLE(HttpStatus.BAD_REQUEST, "USER_018", "잘못된 권한 값입니다"),
+    LOGIN_ATTEMPTS_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "USER_019", "Too many failed login attempts. Please try again in 10 minutes"),
 
     // ============= 메시지 관련 에러 (MSG) =============
     MESSAGE_NOT_FOUND(HttpStatus.NOT_FOUND, "MSG_001", "메시지를 찾을 수 없습니다"),
@@ -95,6 +96,9 @@ public enum ErrorCode {
 
     // ============= 블로그 에러 (BLOG) =============
     BLOG_PUBLISH_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "BLOG_001", "하루 발행 가능한 글 수(8개)를 초과했습니다"),
+
+    // ============= 문의함 에러 (INQ) =============
+    INQUIRY_NOT_FOUND(HttpStatus.NOT_FOUND, "INQ_001", "문의를 찾을 수 없습니다"),
 
     // ============= 파일 에러 (FILE) =============
     INVALID_FILE_KEY(HttpStatus.BAD_REQUEST, "FILE_001", "허용되지 않은 파일 경로입니다"),
