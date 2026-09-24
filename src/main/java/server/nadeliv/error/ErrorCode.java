@@ -97,6 +97,9 @@ public enum ErrorCode {
     // ============= 블로그 에러 (BLOG) =============
     BLOG_PUBLISH_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "BLOG_001", "하루 발행 가능한 글 수(8개)를 초과했습니다"),
 
+    // ============= 문의함 에러 (INQ) =============
+    INQUIRY_NOT_FOUND(HttpStatus.NOT_FOUND, "INQ_001", "문의를 찾을 수 없습니다"),
+
     // ============= 파일 에러 (FILE) =============
     INVALID_FILE_KEY(HttpStatus.BAD_REQUEST, "FILE_001", "허용되지 않은 파일 경로입니다"),
 
