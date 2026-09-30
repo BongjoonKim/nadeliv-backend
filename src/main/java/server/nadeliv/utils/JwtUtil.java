@@ -3,9 +3,11 @@ package server.nadeliv.utils;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -15,7 +17,12 @@ import java.util.function.Function;
 @Slf4j
 @Component
 public class JwtUtil {
-    private static final byte[] SECRET_KEY = "harieshariesharieshaireshariesha".getBytes();
+    // HS256 은 256bit(32byte) 이상 키가 필요하다.
+    private static final int MIN_SECRET_BYTES = 32;
+
+    // 서명 키는 설정(jwt.secretKey)에서 주입 — 운영은 deploy.yml 이 GitHub Secret JWT_SECRET 으로 채운다.
+    // 코드에 키를 박아두면 저장소 접근만으로 토큰 위조가 가능하므로 절대 하드코딩하지 않는다.
+    private final Key signingKey;
     private static final long ACCESS_TOKEN_EXPIRY = 15 * 60 * 1000; // 15분
     private static final long REFRESH_TOKEN_EXPIRY = 30L * 24 * 60 * 60 * 1000; // 30일 (L 추가 중요!)
     private static final SignatureAlgorithm algorithm = SignatureAlgorithm.HS256;
@@ -25,6 +32,17 @@ public class JwtUtil {
 
     static {
         dateFormat.setTimeZone(TimeZone.getTimeZone("Asia/Seoul")); // 한국 시간대
+    }
+
+    public JwtUtil(@Value("${jwt.secretKey:}") String secret) {
+        byte[] keyBytes = secret == null ? new byte[0] : secret.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length < MIN_SECRET_BYTES) {
+            // 값 자체는 로그에 남기지 않는다.
+            throw new IllegalStateException(
+                    "jwt.secretKey 가 비어 있거나 너무 짧습니다 (현재 " + keyBytes.length
+                            + "byte, 최소 " + MIN_SECRET_BYTES + "byte). 예: openssl rand -base64 48");
+        }
+        this.signingKey = Keys.hmacShaKeyFor(keyBytes);
     }
 
     public String generateAccessToken(String username) {
@@ -42,7 +60,7 @@ public class JwtUtil {
                 .setSubject(username)
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
-                .signWith(algorithm, SECRET_KEY)
+                .signWith(signingKey, algorithm)
                 .compact();
 
         log.info("Access Token generated successfully");
@@ -64,7 +82,7 @@ public class JwtUtil {
                 .setSubject(username)
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
-                .signWith(algorithm, SECRET_KEY)
+                .signWith(signingKey, algorithm)
                 .compact();
 
         log.info("Refresh Token generated successfully");
@@ -74,7 +92,7 @@ public class JwtUtil {
     public Claims verifyToken(String token) throws ExpiredJwtException, JwtException {
         try {
             Jws<Claims> claimsJws = Jwts.parserBuilder()
-                    .setSigningKey(SECRET_KEY)
+                    .setSigningKey(signingKey)
                     .build()
                     .parseClaimsJws(token);
 
@@ -145,7 +163,7 @@ public class JwtUtil {
     private Claims getAllClaimsFromToken(String token) {
         try {
             return Jwts.parserBuilder()
-                    .setSigningKey(SECRET_KEY)
+                    .setSigningKey(signingKey)
                     .build()
                     .parseClaimsJws(token)
                     .getBody();
