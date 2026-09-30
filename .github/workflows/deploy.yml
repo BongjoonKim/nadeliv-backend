@@ -21,6 +21,16 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # JwtUtil 은 32byte 미만 키면 부팅을 거부한다. 운영을 내리기 전에 여기서 먼저 막는다.
+      - name: Validate JWT secret
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          if [ "$(printf '%s' "$JWT_SECRET" | wc -c)" -lt 32 ]; then
+            echo "::error::GitHub Secret JWT_SECRET 이 비어 있거나 32byte 미만입니다. openssl rand -base64 48 로 생성해 등록하세요."
+            exit 1
+          fi
+
       - name: Build with Gradle
         run: |
           ./gradlew build -x test  # 테스트를 제외하고 빌드
@@ -160,7 +170,7 @@ jobs:
             kakao:
               api: ${KAKAO_API_KEY}
           jwt:
-            secretKey: ${JWT_SECRET}
+            secretKey: "${JWT_SECRET}"
             expiration: 200000
           front:
             url:
