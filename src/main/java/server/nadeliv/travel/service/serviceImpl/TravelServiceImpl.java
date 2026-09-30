@@ -58,6 +58,9 @@ public class TravelServiceImpl implements TravelService {
     private static final String SCOPE_TRAVEL_UPLOAD = "travel:upload";
     private static final int MAX_DAILY_UPLOAD = 500;
 
+    // 일정 항목 메모 최대 길이
+    private static final int MAX_SCHEDULE_MEMO_LENGTH = 500;
+
     // ==================== Travel CRUD ====================
 
     @Override
@@ -349,10 +352,13 @@ public class TravelServiceImpl implements TravelService {
                 .date(request.getDate())
                 .title(request.getTitle())
                 .description(request.getDescription())
-                .places(request.getPlaces() != null ? request.getPlaces() : new ArrayList<>())
+                .places(sanitizeSchedulePlaces(request.getPlaces()))
                 .sortOrder(request.getSortOrder())
                 .build();
 
+        if (travel.getSchedules() == null) {
+            travel.setSchedules(new ArrayList<>());
+        }
         travel.getSchedules().add(schedule);
         travel.setUpdated(LocalDateTime.now());
         travel.setUpdatedUser(userId);
@@ -376,7 +382,7 @@ public class TravelServiceImpl implements TravelService {
         if (request.getDayNumber() != null) schedule.setDayNumber(request.getDayNumber());
         if (request.getDate() != null) schedule.setDate(request.getDate());
         if (request.getDescription() != null) schedule.setDescription(request.getDescription());
-        if (request.getPlaces() != null) schedule.setPlaces(request.getPlaces());
+        if (request.getPlaces() != null) schedule.setPlaces(sanitizeSchedulePlaces(request.getPlaces()));
         if (request.getSortOrder() != null) schedule.setSortOrder(request.getSortOrder());
 
         travel.setUpdated(LocalDateTime.now());
@@ -563,6 +569,25 @@ public class TravelServiceImpl implements TravelService {
     }
 
     // ==================== Helper Methods ====================
+
+    // 일정 항목 정리: 이름 없는 항목 제외, 시각은 HH:mm 만 허용, 메모 길이 제한
+    private List<TravelSchedule.SchedulePlace> sanitizeSchedulePlaces(List<TravelSchedule.SchedulePlace> places) {
+        if (places == null) {
+            return new ArrayList<>();
+        }
+        List<TravelSchedule.SchedulePlace> result = new ArrayList<>();
+        for (TravelSchedule.SchedulePlace p : places) {
+            if (p == null || p.getName() == null || p.getName().isBlank()) continue;
+            if (p.getTime() != null && !p.getTime().matches("([01]\\d|2[0-3]):[0-5]\\d")) {
+                p.setTime(null);
+            }
+            if (p.getMemo() != null && p.getMemo().length() > MAX_SCHEDULE_MEMO_LENGTH) {
+                p.setMemo(p.getMemo().substring(0, MAX_SCHEDULE_MEMO_LENGTH));
+            }
+            result.add(p);
+        }
+        return result;
+    }
 
     private Travels findTravelById(String travelId) {
         return travelsRepo.findById(travelId)
