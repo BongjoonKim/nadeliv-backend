@@ -458,11 +458,26 @@ public class TravelServiceImpl implements TravelService {
 
     @Override
     public List<TravelMedia> getMediaList(String travelId, String userId, int page, int size) {
+        return getMediaList(travelId, userId, page, size, null, null);
+    }
+
+    /**
+     * 미디어 목록 (앨범 화면 무한 스크롤용).
+     * @param sort created_desc(기본) | created_asc | taken_desc | taken_asc
+     * @param type image | video | null(전체)
+     */
+    @Override
+    public List<TravelMedia> getMediaList(String travelId, String userId, int page, int size, String sort, String type) {
         Travels travel = findTravelById(travelId);
         validateTravelAccess(travel, userId);
 
-        PageRequest pageRequest = PageRequest.of(page, size);
-        Page<TravelMedia> mediaPage = travelMediaRepo.findByTravelIdOrderByCreatedDesc(travelId, pageRequest);
+        // 한 번에 너무 많이 가져가지 않도록 상한
+        int safeSize = Math.max(1, Math.min(size, 200));
+        PageRequest pageRequest = PageRequest.of(page, safeSize, resolveMediaSort(sort));
+        String mimePrefix = resolveMimePrefix(type);
+        Page<TravelMedia> mediaPage = (mimePrefix == null)
+                ? travelMediaRepo.findByTravelId(travelId, pageRequest)
+                : travelMediaRepo.findByTravelIdAndMimeTypeStartingWith(travelId, mimePrefix, pageRequest);
         List<TravelMedia> mediaList = mediaPage.getContent();
 
         // thumbnailUrl이 없거나 잘못된 경우 재계산 및 DB 업데이트
@@ -481,6 +496,40 @@ public class TravelServiceImpl implements TravelService {
         }
 
         return mediaList;
+    }
+
+    @Override
+    public long countMedia(String travelId, String userId, String type) {
+        Travels travel = findTravelById(travelId);
+        validateTravelAccess(travel, userId);
+        String mimePrefix = resolveMimePrefix(type);
+        Long count = (mimePrefix == null)
+                ? travelMediaRepo.countByTravelId(travelId)
+                : travelMediaRepo.countByTravelIdAndMimeTypeStartingWith(travelId, mimePrefix);
+        return count != null ? count : 0L;
+    }
+
+    private Sort resolveMediaSort(String sort) {
+        if (sort == null) return Sort.by(Sort.Direction.DESC, "created");
+        switch (sort) {
+            case "created_asc":
+                return Sort.by(Sort.Direction.ASC, "created");
+            case "taken_desc":
+                // takenAt 없는 문서(null)는 Mongo 정렬상 DESC 에서 뒤로 밀림 → created 로 2차 정렬
+                return Sort.by(Sort.Order.desc("takenAt"), Sort.Order.desc("created"));
+            case "taken_asc":
+                return Sort.by(Sort.Order.asc("takenAt"), Sort.Order.asc("created"));
+            case "created_desc":
+            default:
+                return Sort.by(Sort.Direction.DESC, "created");
+        }
+    }
+
+    private String resolveMimePrefix(String type) {
+        if (type == null || type.isBlank() || "all".equalsIgnoreCase(type)) return null;
+        if ("image".equalsIgnoreCase(type)) return "image/";
+        if ("video".equalsIgnoreCase(type)) return "video/";
+        return null;
     }
 
     @Override

@@ -38,6 +38,8 @@ public interface TravelService {
     // Media Management
     TravelMedia uploadMedia(String travelId, MultipartFile file, TravelMediaRequest request, String userId);
     List<TravelMedia> getMediaList(String travelId, String userId, int page, int size);
+    List<TravelMedia> getMediaList(String travelId, String userId, int page, int size, String sort, String type);
+    long countMedia(String travelId, String userId, String type);
     void deleteMedia(String travelId, String mediaId, String userId);
 
     // Media Download
