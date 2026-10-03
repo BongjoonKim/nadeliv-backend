@@ -19,6 +19,7 @@ import server.nadeliv.users.dto.CustomUserDetails;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @RestController
@@ -174,14 +175,32 @@ public class TravelController {
         return ResponseEntity.ok(media);
     }
 
+    /**
+     * 미디어 목록. 앨범 화면 무한 스크롤용으로 정렬·타입 필터를 받는다.
+     * sort: created_desc(기본) | created_asc | taken_desc | taken_asc
+     * type: all(기본) | image | video
+     */
     @GetMapping("/{travelId}/media")
     public ResponseEntity<List<TravelMedia>> getMediaList(
             @PathVariable String travelId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String type,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
-        List<TravelMedia> mediaList = travelService.getMediaList(travelId, userDetails.getUsername(), page, size);
+        List<TravelMedia> mediaList = travelService.getMediaList(
+                travelId, userDetails.getUsername(), page, size, sort, type);
         return ResponseEntity.ok(mediaList);
+    }
+
+    /** 미디어 개수 (대시보드 Album 박스·앨범 헤더용). type: all | image | video */
+    @GetMapping("/{travelId}/media/count")
+    public ResponseEntity<Map<String, Long>> getMediaCount(
+            @PathVariable String travelId,
+            @RequestParam(required = false) String type,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        long count = travelService.countMedia(travelId, userDetails.getUsername(), type);
+        return ResponseEntity.ok(Map.of("count", count));
     }
 
     @DeleteMapping("/{travelId}/media/{mediaId}")
