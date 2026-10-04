@@ -13,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 import server.nadeliv.travel.model.dto.*;
 import server.nadeliv.travel.model.entities.TravelMedia;
 import server.nadeliv.travel.model.enums.TravelRole;
+import server.nadeliv.travel.service.TravelMediaUploadService;
 import server.nadeliv.travel.service.TravelService;
 import server.nadeliv.users.dto.CustomUserDetails;
 
@@ -28,6 +29,7 @@ import java.util.Map;
 public class TravelController {
 
     private final TravelService travelService;
+    private final TravelMediaUploadService travelMediaUploadService;
 
     // ==================== Travel CRUD ====================
 
@@ -173,6 +175,48 @@ public class TravelController {
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         TravelMedia media = travelService.uploadMedia(travelId, file, request, userDetails.getUsername());
         return ResponseEntity.ok(media);
+    }
+
+    // ==================== Media Direct Upload (presigned, 웹·iOS 공용) ====================
+
+    /** 업로드 시작 — S3 에 직접 PUT 할 URL 발급. 64MB 초과는 멀티파트 */
+    @PostMapping("/{travelId}/media/uploads")
+    public ResponseEntity<MediaUploadInitResponse> initMediaUpload(
+            @PathVariable String travelId,
+            @Valid @RequestBody MediaUploadInitRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(
+                travelMediaUploadService.initUpload(travelId, request, userDetails.getUsername()));
+    }
+
+    /** 만료된 part URL 재발급 (partNumbers 비우면 전체) */
+    @PostMapping("/{travelId}/media/uploads/{uploadId}/parts")
+    public ResponseEntity<MediaUploadInitResponse> refreshMediaUploadParts(
+            @PathVariable String travelId,
+            @PathVariable String uploadId,
+            @RequestBody(required = false) MediaUploadPartsRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(travelMediaUploadService.refreshPartUrls(
+                travelId, uploadId, request != null ? request.getPartNumbers() : null, userDetails.getUsername()));
+    }
+
+    /** 업로드 완료 — 서버가 S3 를 확인한 뒤 TravelMedia 등록. 재호출해도 같은 미디어 반환 */
+    @PostMapping("/{travelId}/media/uploads/{uploadId}/complete")
+    public ResponseEntity<TravelMedia> completeMediaUpload(
+            @PathVariable String travelId,
+            @PathVariable String uploadId,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(
+                travelMediaUploadService.completeUpload(travelId, uploadId, userDetails.getUsername()));
+    }
+
+    @DeleteMapping("/{travelId}/media/uploads/{uploadId}")
+    public ResponseEntity<Void> abortMediaUpload(
+            @PathVariable String travelId,
+            @PathVariable String uploadId,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        travelMediaUploadService.abortUpload(travelId, uploadId, userDetails.getUsername());
+        return ResponseEntity.noContent().build();
     }
 
     /**

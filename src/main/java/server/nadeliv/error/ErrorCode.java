@@ -93,6 +93,11 @@ public enum ErrorCode {
     TRAVEL_CHANNEL_NOT_FOUND(HttpStatus.NOT_FOUND, "TRV_015", "여행 채널을 찾을 수 없습니다"),
     CHANNEL_ALREADY_LINKED(HttpStatus.CONFLICT, "TRV_016", "이미 연결된 채널입니다"),
     TRAVEL_UPLOAD_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "TRV_017", "하루 업로드 가능한 파일 수(500개)를 초과했습니다"),
+    TRAVEL_MEDIA_TOO_LARGE(HttpStatus.BAD_REQUEST, "TRV_018", "파일 크기는 최대 5GB 입니다"),
+    TRAVEL_MEDIA_UPLOAD_NOT_FOUND(HttpStatus.NOT_FOUND, "TRV_019", "업로드 세션을 찾을 수 없거나 만료되었습니다"),
+    TRAVEL_MEDIA_UPLOAD_INCOMPLETE(HttpStatus.CONFLICT, "TRV_020", "파일 업로드가 아직 끝나지 않았습니다"),
+    TRAVEL_MEDIA_UPLOAD_MISMATCH(HttpStatus.BAD_REQUEST, "TRV_021", "업로드된 파일 크기가 요청과 다릅니다"),
+    TRAVEL_MEDIA_UPLOAD_IN_PROGRESS(HttpStatus.CONFLICT, "TRV_022", "이미 완료 처리 중인 업로드입니다"),
 
     // ============= 블로그 에러 (BLOG) =============
     BLOG_PUBLISH_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "BLOG_001", "하루 발행 가능한 글 수(8개)를 초과했습니다"),
