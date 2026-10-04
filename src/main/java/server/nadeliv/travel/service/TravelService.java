@@ -45,5 +45,4 @@ public interface TravelService {
     // Media Download
     Resource downloadMedia(String travelId, String mediaId, String userId);
     TravelMedia getMediaInfo(String travelId, String mediaId, String userId);
-    Resource downloadMediaBatch(String travelId, List<String> mediaIds, String userId);
 }

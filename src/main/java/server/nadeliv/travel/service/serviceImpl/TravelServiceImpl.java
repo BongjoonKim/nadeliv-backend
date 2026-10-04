@@ -30,16 +30,12 @@ import server.nadeliv.travel.repo.TravelsRepo;
 import server.nadeliv.travel.service.S3Service;
 import server.nadeliv.travel.service.TravelService;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
 @Slf4j
 @Service
@@ -435,6 +431,7 @@ public class TravelServiceImpl implements TravelService {
                 .originalFileName(file.getOriginalFilename())
                 .fileUrl(fileUrl)
                 .thumbnailUrl(thumbnailUrl)
+                .displayUrl(s3Service.buildDisplayUrl(fileUrl))
                 .mimeType(file.getContentType())
                 .fileSize(file.getSize())
                 .width(request != null ? request.getWidth() : null)
@@ -480,15 +477,23 @@ public class TravelServiceImpl implements TravelService {
                 : travelMediaRepo.findByTravelIdAndMimeTypeStartingWith(travelId, mimePrefix, pageRequest);
         List<TravelMedia> mediaList = mediaPage.getContent();
 
-        // thumbnailUrl이 없거나 잘못된 경우 재계산 및 DB 업데이트
+        // thumbnailUrl·displayUrl 이 없거나 잘못된 경우 재계산 및 DB 업데이트
+        // (displayUrl 은 3단계에서 추가 — 이전 레코드는 객체가 없을 수 있어 클라이언트가 원본으로 폴백한다)
         List<TravelMedia> toUpdate = new ArrayList<>();
         for (TravelMedia media : mediaList) {
             if (media.getFileUrl() != null) {
+                boolean changed = false;
                 String correctUrl = s3Service.buildThumbnailUrl(media.getFileUrl());
                 if (correctUrl != null && !correctUrl.equals(media.getThumbnailUrl())) {
                     media.setThumbnailUrl(correctUrl);
-                    toUpdate.add(media);
+                    changed = true;
                 }
+                String displayUrl = s3Service.buildDisplayUrl(media.getFileUrl());
+                if (displayUrl != null && !displayUrl.equals(media.getDisplayUrl())) {
+                    media.setDisplayUrl(displayUrl);
+                    changed = true;
+                }
+                if (changed) toUpdate.add(media);
             }
         }
         if (!toUpdate.isEmpty()) {
@@ -580,41 +585,6 @@ public class TravelServiceImpl implements TravelService {
 
         return travelMediaRepo.findById(mediaId)
                 .orElseThrow(() -> new CustomException(ErrorCode.TRAVEL_MEDIA_NOT_FOUND));
-    }
-
-    @Override
-    public Resource downloadMediaBatch(String travelId, List<String> mediaIds, String userId) {
-        log.info("Batch downloading {} media from travel: {} by user: {}", mediaIds.size(), travelId, userId);
-
-        Travels travel = findTravelById(travelId);
-        validateTravelAccess(travel, userId);
-
-        List<TravelMedia> mediaList = travelMediaRepo.findAllById(mediaIds);
-        if (mediaList.isEmpty()) {
-            throw new CustomException(ErrorCode.TRAVEL_MEDIA_NOT_FOUND);
-        }
-
-        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
-             ZipOutputStream zos = new ZipOutputStream(baos)) {
-
-            for (TravelMedia media : mediaList) {
-                try (ResponseInputStream<GetObjectResponse> s3Object = s3Service.downloadFile(media.getFileUrl())) {
-                    String entryName = media.getOriginalFileName() != null
-                            ? media.getOriginalFileName()
-                            : media.getFileName();
-                    zos.putNextEntry(new ZipEntry(entryName));
-                    s3Object.transferTo(zos);
-                    zos.closeEntry();
-                }
-            }
-
-            zos.finish();
-            byte[] zipBytes = baos.toByteArray();
-            return new org.springframework.core.io.ByteArrayResource(zipBytes);
-        } catch (IOException e) {
-            log.error("Failed to create ZIP for batch download: {}", e.getMessage());
-            throw new CustomException(ErrorCode.S3_DOWNLOAD_FAILED, e.getMessage());
-        }
     }
 
     // ==================== Helper Methods ====================

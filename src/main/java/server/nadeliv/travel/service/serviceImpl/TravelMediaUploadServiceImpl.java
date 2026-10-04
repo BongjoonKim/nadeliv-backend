@@ -232,6 +232,7 @@ public class TravelMediaUploadServiceImpl implements TravelMediaUploadService {
                 .originalFileName(upload.getOriginalFileName())
                 .fileUrl(fileUrl)
                 .thumbnailUrl(s3Service.buildThumbnailUrl(fileUrl))
+                .displayUrl(s3Service.buildDisplayUrl(fileUrl))
                 .mimeType(upload.getMimeType())
                 .fileSize(upload.getFileSize())
                 .width(upload.getWidth())

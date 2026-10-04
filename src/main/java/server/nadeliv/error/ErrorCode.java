@@ -98,6 +98,8 @@ public enum ErrorCode {
     TRAVEL_MEDIA_UPLOAD_INCOMPLETE(HttpStatus.CONFLICT, "TRV_020", "파일 업로드가 아직 끝나지 않았습니다"),
     TRAVEL_MEDIA_UPLOAD_MISMATCH(HttpStatus.BAD_REQUEST, "TRV_021", "업로드된 파일 크기가 요청과 다릅니다"),
     TRAVEL_MEDIA_UPLOAD_IN_PROGRESS(HttpStatus.CONFLICT, "TRV_022", "이미 완료 처리 중인 업로드입니다"),
+    TRAVEL_DOWNLOAD_TICKET_INVALID(HttpStatus.NOT_FOUND, "TRV_023", "다운로드 링크가 만료되었거나 잘못되었습니다"),
+    TRAVEL_DOWNLOAD_TOO_MANY(HttpStatus.BAD_REQUEST, "TRV_024", "한 번에 내려받을 수 있는 파일은 최대 1000개입니다"),
 
     // ============= 블로그 에러 (BLOG) =============
     BLOG_PUBLISH_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, "BLOG_001", "하루 발행 가능한 글 수(8개)를 초과했습니다"),

@@ -11,6 +11,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
 
@@ -312,6 +313,45 @@ public class S3Service {
     private boolean isVideoFile(String url) {
         String lowerUrl = url.toLowerCase();
         return VIDEO_EXTENSIONS.stream().anyMatch(lowerUrl::endsWith);
+    }
+
+    /**
+     * 라이트박스·뷰어용 중간 크기(2048px) JPEG URL. Lambda 규칙: /origin/ → /display/, 확장자 .jpg
+     * HEIC 처럼 브라우저가 못 그리는 원본도 이 이미지로 보여준다. 영상은 없음(null).
+     */
+    public String buildDisplayUrl(String fileUrl) {
+        if (fileUrl == null || !fileUrl.contains("/origin/") || isVideoFile(fileUrl)) {
+            return null;
+        }
+        String displayUrl = fileUrl.replace("/origin/", "/display/");
+        int lastDotIndex = displayUrl.lastIndexOf(".");
+        if (lastDotIndex > displayUrl.lastIndexOf("/")) {
+            displayUrl = displayUrl.substring(0, lastDotIndex);
+        }
+        return displayUrl + ".jpg";
+    }
+
+    /**
+     * 브라우저가 S3 에서 바로 받도록 하는 presigned GET URL.
+     * response-content-disposition 을 서명에 넣어 저장 파일명을 원본 이름으로 강제한다 (EC2 를 거치지 않음).
+     */
+    public String presignGet(String fileUrl, String downloadFileName, String contentType, Duration ttl) {
+        String key = extractKeyFromUrl(fileUrl);
+        String encodedName = java.net.URLEncoder.encode(
+                downloadFileName != null ? downloadFileName : key.substring(key.lastIndexOf('/') + 1),
+                java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
+        GetObjectRequest.Builder get = GetObjectRequest.builder()
+                .bucket(BUCKET_NAME)
+                .key(key)
+                .responseContentDisposition("attachment; filename*=UTF-8''" + encodedName);
+        if (contentType != null && !contentType.isBlank()) {
+            get.responseContentType(contentType);
+        }
+        return s3Presigner.presignGetObject(GetObjectPresignRequest.builder()
+                        .signatureDuration(ttl)
+                        .getObjectRequest(get.build())
+                        .build())
+                .url().toString();
     }
 
     private String extractKeyFromUrl(String fileUrl) {
