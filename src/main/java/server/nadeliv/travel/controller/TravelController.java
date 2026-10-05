@@ -1,5 +1,6 @@
 package server.nadeliv.travel.controller;
 
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,8 @@ import org.springframework.web.multipart.MultipartFile;
 import server.nadeliv.travel.model.dto.*;
 import server.nadeliv.travel.model.entities.TravelMedia;
 import server.nadeliv.travel.model.enums.TravelRole;
+import server.nadeliv.travel.service.TravelMediaDownloadService;
+import server.nadeliv.travel.service.TravelMediaUploadService;
 import server.nadeliv.travel.service.TravelService;
 import server.nadeliv.users.dto.CustomUserDetails;
 
@@ -28,6 +31,8 @@ import java.util.Map;
 public class TravelController {
 
     private final TravelService travelService;
+    private final TravelMediaUploadService travelMediaUploadService;
+    private final TravelMediaDownloadService travelMediaDownloadService;
 
     // ==================== Travel CRUD ====================
 
@@ -175,6 +180,48 @@ public class TravelController {
         return ResponseEntity.ok(media);
     }
 
+    // ==================== Media Direct Upload (presigned, 웹·iOS 공용) ====================
+
+    /** 업로드 시작 — S3 에 직접 PUT 할 URL 발급. 64MB 초과는 멀티파트 */
+    @PostMapping("/{travelId}/media/uploads")
+    public ResponseEntity<MediaUploadInitResponse> initMediaUpload(
+            @PathVariable String travelId,
+            @Valid @RequestBody MediaUploadInitRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(
+                travelMediaUploadService.initUpload(travelId, request, userDetails.getUsername()));
+    }
+
+    /** 만료된 part URL 재발급 (partNumbers 비우면 전체) */
+    @PostMapping("/{travelId}/media/uploads/{uploadId}/parts")
+    public ResponseEntity<MediaUploadInitResponse> refreshMediaUploadParts(
+            @PathVariable String travelId,
+            @PathVariable String uploadId,
+            @RequestBody(required = false) MediaUploadPartsRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(travelMediaUploadService.refreshPartUrls(
+                travelId, uploadId, request != null ? request.getPartNumbers() : null, userDetails.getUsername()));
+    }
+
+    /** 업로드 완료 — 서버가 S3 를 확인한 뒤 TravelMedia 등록. 재호출해도 같은 미디어 반환 */
+    @PostMapping("/{travelId}/media/uploads/{uploadId}/complete")
+    public ResponseEntity<TravelMedia> completeMediaUpload(
+            @PathVariable String travelId,
+            @PathVariable String uploadId,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(
+                travelMediaUploadService.completeUpload(travelId, uploadId, userDetails.getUsername()));
+    }
+
+    @DeleteMapping("/{travelId}/media/uploads/{uploadId}")
+    public ResponseEntity<Void> abortMediaUpload(
+            @PathVariable String travelId,
+            @PathVariable String uploadId,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        travelMediaUploadService.abortUpload(travelId, uploadId, userDetails.getUsername());
+        return ResponseEntity.noContent().build();
+    }
+
     /**
      * 미디어 목록. 앨범 화면 무한 스크롤용으로 정렬·타입 필터를 받는다.
      * sort: created_desc(기본) | created_asc | taken_desc | taken_asc
@@ -212,8 +259,40 @@ public class TravelController {
         return ResponseEntity.noContent().build();
     }
 
-    // ==================== Media Download ====================
+    // ==================== Media Download (웹·iOS 공용) ====================
 
+    /** 단일 파일 — S3 presigned GET URL. 클라이언트가 이 URL 로 이동하면 원본 파일명으로 저장된다 */
+    @GetMapping("/{travelId}/media/{mediaId}/download-url")
+    public ResponseEntity<MediaDownloadUrlResponse> getMediaDownloadUrl(
+            @PathVariable String travelId,
+            @PathVariable String mediaId,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(
+                travelMediaDownloadService.createDownloadUrl(travelId, mediaId, userDetails.getUsername()));
+    }
+
+    /** 일괄 다운로드 티켓 발급 — 응답의 path 로 GET 하면 ZIP 이 스트리밍된다 */
+    @PostMapping("/{travelId}/media/downloads")
+    public ResponseEntity<MediaDownloadTicketResponse> createMediaDownloadTicket(
+            @PathVariable String travelId,
+            @Valid @RequestBody MediaDownloadRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(
+                travelMediaDownloadService.createTicket(travelId, request.getMediaIds(), userDetails.getUsername()));
+    }
+
+    /**
+     * 티켓으로 ZIP 스트리밍 (비인증 — 'ps' 경로, 티켓 자체가 256bit 난수).
+     * 브라우저는 <a href> 로 열어 디스크에 바로 받는다. 응답은 chunked 로 흘러간다.
+     */
+    @GetMapping("/ps/downloads/{ticket}")
+    public void streamMediaDownload(
+            @PathVariable String ticket,
+            HttpServletResponse response) {
+        travelMediaDownloadService.streamZip(ticket, response);
+    }
+
+    /** 구버전 단일 다운로드 (EC2 경유). 프론트 전환기 호환용 — download-url 로 대체됨 */
     @GetMapping("/{travelId}/media/{mediaId}/download")
     public ResponseEntity<Resource> downloadMedia(
             @PathVariable String travelId,
@@ -234,18 +313,13 @@ public class TravelController {
                 .body(resource);
     }
 
+    /** 구버전 일괄 다운로드. 메모리 ZIP 대신 스트리밍으로 바뀌었고, 프론트 전환기 호환용으로 유지 */
     @PostMapping("/{travelId}/media/download")
-    public ResponseEntity<Resource> downloadMediaBatch(
+    public void downloadMediaBatch(
             @PathVariable String travelId,
             @Valid @RequestBody MediaDownloadRequest request,
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-        Resource resource = travelService.downloadMediaBatch(
-                travelId, request.getMediaIds(), userDetails.getUsername());
-
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType("application/zip"))
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"travel-media.zip\"")
-                .body(resource);
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            HttpServletResponse response) {
+        travelMediaDownloadService.streamZip(travelId, request.getMediaIds(), userDetails.getUsername(), response);
     }
 }

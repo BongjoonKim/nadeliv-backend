@@ -9,12 +9,15 @@ import server.nadeliv.error.ErrorCode;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.*;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,6 +27,7 @@ import java.util.UUID;
 public class S3Service {
 
     private final S3Client s3Client;
+    private final S3Presigner s3Presigner;
 
     private static final String BUCKET_NAME = "koraveler-travel";
     private static final String BASE_PATH = "travel-projects";
@@ -150,6 +154,124 @@ public class S3Service {
         }
     }
 
+    // ==================== Presigned 직접 업로드 (웹·iOS 공용) ====================
+
+    /** 원본 객체 key — Lambda 썸네일 규칙(/origin/ → /thumbnails/)을 따른다 */
+    public String buildOriginKey(String travelId, String fileName) {
+        return BASE_PATH + "/" + travelId + "/origin/" + fileName;
+    }
+
+    public String buildFileUrl(String key) {
+        return "https://" + BUCKET_NAME + ".s3.ap-northeast-2.amazonaws.com/" + key;
+    }
+
+    /** 단일 PUT URL. Content-Type·Content-Length 가 서명에 포함되어 다른 크기/타입은 S3 가 거부한다 */
+    public String presignPut(String key, String contentType, long contentLength, Duration ttl) {
+        PutObjectRequest put = PutObjectRequest.builder()
+                .bucket(BUCKET_NAME)
+                .key(key)
+                .contentType(contentType)
+                .contentLength(contentLength)
+                .build();
+        return s3Presigner.presignPutObject(PutObjectPresignRequest.builder()
+                        .signatureDuration(ttl)
+                        .putObjectRequest(put)
+                        .build())
+                .url().toString();
+    }
+
+    public String createMultipartUpload(String key, String contentType) {
+        try {
+            return s3Client.createMultipartUpload(CreateMultipartUploadRequest.builder()
+                    .bucket(BUCKET_NAME)
+                    .key(key)
+                    .contentType(contentType)
+                    .build()).uploadId();
+        } catch (Exception e) {
+            log.error("S3 createMultipartUpload failed: {}", e.getMessage());
+            throw new CustomException(ErrorCode.S3_UPLOAD_FAILED, e.getMessage());
+        }
+    }
+
+    /** 멀티파트 part URL. part 크기도 서명에 포함 */
+    public String presignUploadPart(String key, String uploadId, int partNumber, long partLength, Duration ttl) {
+        UploadPartRequest part = UploadPartRequest.builder()
+                .bucket(BUCKET_NAME)
+                .key(key)
+                .uploadId(uploadId)
+                .partNumber(partNumber)
+                .contentLength(partLength)
+                .build();
+        return s3Presigner.presignUploadPart(UploadPartPresignRequest.builder()
+                        .signatureDuration(ttl)
+                        .uploadPartRequest(part)
+                        .build())
+                .url().toString();
+    }
+
+    /** S3 에 실제 올라간 part 목록 (클라이언트가 ETag 를 보내지 않아도 서버가 직접 확인) */
+    public List<CompletedPart> listUploadedParts(String key, String uploadId) {
+        List<CompletedPart> parts = new ArrayList<>();
+        Integer marker = null;
+        while (true) {
+            ListPartsResponse res = s3Client.listParts(ListPartsRequest.builder()
+                    .bucket(BUCKET_NAME)
+                    .key(key)
+                    .uploadId(uploadId)
+                    .partNumberMarker(marker)
+                    .build());
+            for (Part p : res.parts()) {
+                parts.add(CompletedPart.builder().partNumber(p.partNumber()).eTag(p.eTag()).build());
+            }
+            if (!Boolean.TRUE.equals(res.isTruncated())) break;
+            marker = res.nextPartNumberMarker();
+        }
+        return parts;
+    }
+
+    public void completeMultipartUpload(String key, String uploadId, List<CompletedPart> parts) {
+        s3Client.completeMultipartUpload(CompleteMultipartUploadRequest.builder()
+                .bucket(BUCKET_NAME)
+                .key(key)
+                .uploadId(uploadId)
+                .multipartUpload(CompletedMultipartUpload.builder().parts(parts).build())
+                .build());
+    }
+
+    public void abortMultipartUpload(String key, String uploadId) {
+        try {
+            s3Client.abortMultipartUpload(AbortMultipartUploadRequest.builder()
+                    .bucket(BUCKET_NAME)
+                    .key(key)
+                    .uploadId(uploadId)
+                    .build());
+        } catch (NoSuchUploadException e) {
+            // 이미 완료·중단된 업로드
+        } catch (Exception e) {
+            log.warn("S3 abortMultipartUpload failed key={}: {}", key, e.getMessage());
+        }
+    }
+
+    /** 객체 메타데이터. 없으면 null */
+    public HeadObjectResponse headObject(String key) {
+        try {
+            return s3Client.headObject(HeadObjectRequest.builder().bucket(BUCKET_NAME).key(key).build());
+        } catch (NoSuchKeyException e) {
+            return null;
+        } catch (S3Exception e) {
+            if (e.statusCode() == 404) return null;
+            throw e;
+        }
+    }
+
+    public void deleteKey(String key) {
+        try {
+            s3Client.deleteObject(DeleteObjectRequest.builder().bucket(BUCKET_NAME).key(key).build());
+        } catch (Exception e) {
+            log.warn("S3 delete failed key={}: {}", key, e.getMessage());
+        }
+    }
+
     private void validateMediaType(MultipartFile file) {
         String contentType = file.getContentType();
         if (contentType == null || (!contentType.startsWith("image/") && !contentType.startsWith("video/"))) {
@@ -191,6 +313,45 @@ public class S3Service {
     private boolean isVideoFile(String url) {
         String lowerUrl = url.toLowerCase();
         return VIDEO_EXTENSIONS.stream().anyMatch(lowerUrl::endsWith);
+    }
+
+    /**
+     * 라이트박스·뷰어용 중간 크기(2048px) JPEG URL. Lambda 규칙: /origin/ → /display/, 확장자 .jpg
+     * HEIC 처럼 브라우저가 못 그리는 원본도 이 이미지로 보여준다. 영상은 없음(null).
+     */
+    public String buildDisplayUrl(String fileUrl) {
+        if (fileUrl == null || !fileUrl.contains("/origin/") || isVideoFile(fileUrl)) {
+            return null;
+        }
+        String displayUrl = fileUrl.replace("/origin/", "/display/");
+        int lastDotIndex = displayUrl.lastIndexOf(".");
+        if (lastDotIndex > displayUrl.lastIndexOf("/")) {
+            displayUrl = displayUrl.substring(0, lastDotIndex);
+        }
+        return displayUrl + ".jpg";
+    }
+
+    /**
+     * 브라우저가 S3 에서 바로 받도록 하는 presigned GET URL.
+     * response-content-disposition 을 서명에 넣어 저장 파일명을 원본 이름으로 강제한다 (EC2 를 거치지 않음).
+     */
+    public String presignGet(String fileUrl, String downloadFileName, String contentType, Duration ttl) {
+        String key = extractKeyFromUrl(fileUrl);
+        String encodedName = java.net.URLEncoder.encode(
+                downloadFileName != null ? downloadFileName : key.substring(key.lastIndexOf('/') + 1),
+                java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
+        GetObjectRequest.Builder get = GetObjectRequest.builder()
+                .bucket(BUCKET_NAME)
+                .key(key)
+                .responseContentDisposition("attachment; filename*=UTF-8''" + encodedName);
+        if (contentType != null && !contentType.isBlank()) {
+            get.responseContentType(contentType);
+        }
+        return s3Presigner.presignGetObject(GetObjectPresignRequest.builder()
+                        .signatureDuration(ttl)
+                        .getObjectRequest(get.build())
+                        .build())
+                .url().toString();
     }
 
     private String extractKeyFromUrl(String fileUrl) {

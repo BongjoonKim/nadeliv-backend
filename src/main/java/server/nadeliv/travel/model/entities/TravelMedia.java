@@ -28,6 +28,8 @@ public class TravelMedia extends CommonDTO {
     private String originalFileName;
     private String fileUrl;
     private String thumbnailUrl;
+    /** 중간 크기(2048px) JPEG — 라이트박스·뷰어용. 영상은 null. Lambda 가 /display/ 에 생성 */
+    private String displayUrl;
     private String mimeType;
     private Long fileSize;
     private Integer width;
