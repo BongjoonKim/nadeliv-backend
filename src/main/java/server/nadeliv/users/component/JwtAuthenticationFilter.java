@@ -63,7 +63,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = customUserDetailService.loadUserByUsername(username);
 
-                if (jwtTokenUtil.validateToken(accessToken, userDetails)) {
+                // 탈퇴(비활성)한 계정의 access 토큰은 만료 전이라도 인증하지 않는다
+                if (userDetails.isEnabled() && jwtTokenUtil.validateToken(accessToken, userDetails)) {
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(
                                     userDetails, null, userDetails.getAuthorities());

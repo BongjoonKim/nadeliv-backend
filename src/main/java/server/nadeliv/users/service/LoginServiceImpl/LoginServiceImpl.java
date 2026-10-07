@@ -108,6 +108,11 @@ public class LoginServiceImpl implements LoginService {
             Claims claims = jwtUtil.verifyToken(refreshToken);
             if(!claims.getSubject().isEmpty()) {
                 String userId = claims.getSubject();
+                // 탈퇴(비활성)한 계정은 이전에 받은 refresh 토큰으로도 세션을 이어갈 수 없다
+                Users user = usersRepo.findByUserId(userId);
+                if (user == null || !user.isEnabled()) {
+                    throw new CustomException(ErrorCode.ACCOUNT_DISABLED);
+                }
                 String newAccessToken  = jwtUtil.generateAccessToken(userId);
                 newTokenDTO.setRefreshToken(refreshToken);
                 newTokenDTO.setAccessToken(newAccessToken);

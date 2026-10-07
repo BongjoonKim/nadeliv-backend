@@ -32,4 +32,9 @@ public interface UserFollowsRepo extends MongoRepository<UserFollow, String> {
     long countByFollowerId(String followerId);
 
     long countByFollowingId(String followingId);
+
+    // 회원 탈퇴 시 해당 사용자가 포함된 팔로우 관계 정리
+    void deleteByFollowerId(String followerId);
+
+    void deleteByFollowingId(String followingId);
 }

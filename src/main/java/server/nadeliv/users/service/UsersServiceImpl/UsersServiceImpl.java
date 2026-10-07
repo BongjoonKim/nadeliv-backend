@@ -2,13 +2,21 @@ package server.nadeliv.users.service.UsersServiceImpl;
 
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.ObjectUtils;
+import server.nadeliv.chat.model.entities.ChannelMembers;
+import server.nadeliv.connections.bookmarks.model.Bookmark;
+import server.nadeliv.connections.follows.repo.UserFollowsRepo;
 import server.nadeliv.error.CustomException;
+import server.nadeliv.travel.model.entities.TravelUsers;
 import server.nadeliv.error.ErrorCode;
 import server.nadeliv.users.dto.CustomUserDetails;
 import server.nadeliv.users.dto.UsersDTO;
@@ -21,6 +29,7 @@ import server.nadeliv.users.repo.UsersRepo;
 import server.nadeliv.users.service.UsersService;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Service
 public class UsersServiceImpl implements UsersService {
@@ -30,6 +39,15 @@ public class UsersServiceImpl implements UsersService {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private UserFollowsRepo userFollowsRepo;
+
+    @Autowired
+    private MongoTemplate mongoTemplate;
+
+    /** 탈퇴한 사용자가 남긴 글·댓글·여행에 표시되는 이름 */
+    private static final String WITHDRAWN_NAME = "Deleted user";
 
     @Override
     public UsersDTO createUser(Users user) throws Exception {
@@ -158,9 +176,26 @@ public class UsersServiceImpl implements UsersService {
             throw new CustomException(ErrorCode.PASSWORD_MISMATCH);
         }
 
+        // 비활성화만으로는 탈퇴가 아니다(App Store 5.1.1(v)) → 개인정보를 지우고 로그인을 막는다.
+        // 작성한 글·댓글·여행은 '탈퇴한 사용자' 로 남긴다. userId 는 콘텐츠가 참조하는 키라 유지한다
+        // (같은 아이디로 재가입은 불가, 이메일은 비워지므로 재사용 가능).
+        user.setName(WITHDRAWN_NAME);
+        user.setEmail(null);
+        user.setBirthday(null);
+        user.setSrc(null);
+        user.setPassword(null);
+        user.setUserPassword(passwordEncoder.encode(UUID.randomUUID().toString()));
         user.setEnabled(false);
         user.setUpdated(LocalDateTime.now());
         userRepo.save(user);
+
+        // 개인 관계 데이터 정리: 팔로우 관계·북마크 삭제, 여행·채널에서 쓰던 닉네임 제거
+        userFollowsRepo.deleteByFollowerId(userId);
+        userFollowsRepo.deleteByFollowingId(userId);
+        Query mine = Query.query(Criteria.where("userId").is(userId));
+        mongoTemplate.remove(mine, Bookmark.class);
+        mongoTemplate.updateMulti(mine, new Update().unset("nickname"), TravelUsers.class);
+        mongoTemplate.updateMulti(mine, new Update().unset("nickname"), ChannelMembers.class);
     }
 
     private UserProfileResponse toProfileResponse(Users user) {
