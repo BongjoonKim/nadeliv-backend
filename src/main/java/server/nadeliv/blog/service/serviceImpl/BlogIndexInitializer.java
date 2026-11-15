@@ -39,6 +39,10 @@ public class BlogIndexInitializer {
             mongoTemplate.indexOps(Documents.class)
                     .ensureIndex(new Index().on("updated", org.springframework.data.domain.Sort.Direction.DESC)
                             .named("documents_updated_idx"));
+            // 목록 정렬 기준(생성일)
+            mongoTemplate.indexOps(Documents.class)
+                    .ensureIndex(new Index().on("created", org.springframework.data.domain.Sort.Direction.DESC)
+                            .named("documents_created_idx"));
             mongoTemplate.indexOps(Documents.class)
                     .ensureIndex(new Index().on("createdUser", org.springframework.data.domain.Sort.Direction.ASC)
                             .named("documents_createdUser_idx"));

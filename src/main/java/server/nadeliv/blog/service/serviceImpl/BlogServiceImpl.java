@@ -363,8 +363,9 @@ public class BlogServiceImpl implements BlogService {
     public DocumentsInfo getDocuments(PaginationDTO pageDTO) throws Exception {
         try {
             Page<Documents> documents = null;
-            Sort.Order updatedSort = "ASC".equals(pageDTO.getDateSort()) ? Sort.Order.asc("updated") : Sort.Order.desc("updated");
-            Sort sort = Sort.by(updatedSort);
+            // 목록 정렬은 항상 생성일 기준 — 글을 수정해도 순서가 바뀌지 않는다
+            Sort.Order createdSort = "ASC".equals(pageDTO.getDateSort()) ? Sort.Order.asc("created") : Sort.Order.desc("created");
+            Sort sort = Sort.by(createdSort);
 
             Pageable pageable = PageRequest.of(pageDTO.getPage(), pageDTO.getSize(), sort);
 
@@ -539,9 +540,9 @@ public class BlogServiceImpl implements BlogService {
                 documents = new PageImpl<>(textResults, pageable, total);
             } else {
                 // 폴백: 기존 regex 검색 (짧은 검색어 or 텍스트 인덱스 미적용 환경)
-                Sort.Order updatedSort = "ASC".equals(pageDTO.getDateSort())
-                        ? Sort.Order.asc("updated") : Sort.Order.desc("updated");
-                Sort sort = Sort.by(updatedSort);
+                Sort.Order createdSort = "ASC".equals(pageDTO.getDateSort())
+                        ? Sort.Order.asc("created") : Sort.Order.desc("created");
+                Sort sort = Sort.by(createdSort);
                 Pageable regexPageable = PageRequest.of(pageDTO.getPage(), pageDTO.getSize(), sort);
                 documents = blogsRepo.findByTitleOrContentsWithDisclose(value, value, regexPageable);
             }
@@ -936,7 +937,7 @@ public class BlogServiceImpl implements BlogService {
     @Override
     public DocumentsInfo getFeaturableDocuments(int page, int size, String search) {
         Pageable pageable = PageRequest.of(page, size,
-                Sort.by(Sort.Direction.DESC, "updated"));
+                Sort.by(Sort.Direction.DESC, "created"));
 
         Page<Documents> documents;
 
@@ -1106,9 +1107,9 @@ public class BlogServiceImpl implements BlogService {
             return empty;
         }
 
-        Sort.Order updatedSort = "ASC".equals(pageDTO.getDateSort())
-                ? Sort.Order.asc("updated") : Sort.Order.desc("updated");
-        Sort sort = Sort.by(updatedSort);
+        Sort.Order createdSort = "ASC".equals(pageDTO.getDateSort())
+                ? Sort.Order.asc("created") : Sort.Order.desc("created");
+        Sort sort = Sort.by(createdSort);
         Pageable pageable = PageRequest.of(pageDTO.getPage(), pageDTO.getSize(), sort);
 
         Criteria criteria = Criteria.where("createdUser").in(followingIds)
